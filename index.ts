@@ -90,31 +90,101 @@ type NetworkType = "offchain" | "testnet" | "mainnet" | "none"
 // Store player states of each room
 const roomStates = new Map();
 
-
+const initialRoomState = {
+    playing: false,
+    players: [],
+    roomId: '',
+}
 
 
 io.on('connection', (socket) => {
 
-    // When a client joins a room, they send a "join-room" event with the room ID.
-  socket.on('join-room', ({roomId, player}: {roomId: string, player: PlayerInterface}) => {
+  // When a client joins a room, they send a "join-room" event with the room ID.
+  socket.on('create-room', ({roomId}: {roomId: string}) => {
     // The client joins the specified room.
     socket.join(roomId);
 
-    const currentState = roomStates.get(roomId) || {players: []}
-
-    const playerNo = currentState.players.length + 1
-    const playerU = {...player, name: `Player ${playerNo}`, turn: playerNo}
-
     
+
+    const currentState = {
+      playing: false,
+      players: [],
+      roomId: roomId,
+  }
+
     // Update the room state and broadcast the new state to all clients
-    currentState.players = [...currentState.players, playerU];
+    // currentState.roomId = roomId;
+    console.log("create room ", currentState)
     roomStates.set(roomId, currentState);
 
-    // send current state to client that joind the room
-    socket.emit('get-room-state', currentState.players)
+  });
 
-    // Broadcast to all
-    socket.to(roomId).emit('player-joined-room', currentState.players)
+  socket.on('join-room', () => {
+    // Function to check if a roomId is valid (non-empty string)
+    const isValidRoomId = (roomId: string) => typeof roomId === 'string' && roomId.trim() !== '';
+
+    // Filter the roomStates map to include only entries with valid roomId properties and game has not started
+    const validRooms = Array.from(roomStates.values()).filter(room => isValidRoomId(room.roomId) && (room.playing === false));
+
+    // If there are no valid rooms, return null
+    if (validRooms.length === 0) {
+      socket.emit('no-room-found')
+    } else {
+      // Generate a random index within the range of the validRooms array length
+      const randomIndex = Math.floor(Math.random() * validRooms.length);
+
+      // Use the random index to get a random room state from the validRooms array
+      const randomRoom = validRooms[randomIndex];
+      const roomId = randomRoom.roomId
+
+
+      // Log the random room
+      console.log('joined room  ', roomId);
+
+      // The client joins the specified room 
+      socket.join(roomId);
+      socket.emit('joined-room', roomId)
+
+    }
+
+  });
+
+    // When a client joins a room, they send a "join-room" event with the room ID.
+  socket.on('add-player-to-room', ({roomId, player}: {roomId: string, player: PlayerInterface}) => {
+    // The client joins the specified room.
+    // socket.join(roomId);
+
+    console.log("add to", { roomId})
+
+    const currentState = roomStates.get(roomId)
+
+
+    console.log("player before", player)
+    console.log("state before",currentState.players)
+
+    const playersWithSameAddress = currentState.players.filter((_player: PlayerInterface) => {
+      return (_player.address === player.address);
+    })
+
+    if (playersWithSameAddress.length !== 0) {
+      // tell client that tried joining to piss off
+      console.log({playersWithSameAddress})
+      socket.emit('cannot-add-self-twice')
+    } else {
+      const playerNo = currentState.players.length + 1
+      const playerU = {...player, name: `Player ${playerNo}`, turn: playerNo}      
+      
+      // Update the room state and broadcast the new state to all clients
+      currentState.players = [...currentState.players, playerU];
+      roomStates.set(roomId, currentState);
+
+      // send current state to client that joind the room
+      socket.emit('client-added-to-room', currentState.players)
+
+      // Broadcast to all
+      socket.to(roomId).emit('added-player-to-room', currentState.players)
+    }
+    
   });
 
 
@@ -122,6 +192,12 @@ io.on('connection', (socket) => {
   socket.on('start-game', ({roomId, turn}: {roomId: string, turn: number}) => {
     console.log("start game")
     socket.join(roomId)
+
+    // update server room state
+    const currentState = roomStates.get(roomId)
+    currentState.playing = true
+    roomStates.set(roomId, currentState)
+
     // Notify other clients in the same room that a new client is ready. 
      socket.to(roomId).emit('started-game', turn);
   });
@@ -220,13 +296,44 @@ io.on('connection', (socket) => {
         socket.to(roomId).emit('close-trading')
   })
 
+    socket.on('dice-roll', ( { roomId, dice1, dice2}: {roomId: string, dice1: number, dice2: number}) => {
+      socket.to(roomId).emit('dice-roll', {dice1, dice2})
+  })
+
+  socket.on('place-trade', ( { roomId, tradeData}: {roomId: string, tradeData: {
+    from: number,
+            to: number,
+            cashFrom: number,
+            cashTo: number,
+            landIDsFrom: string[],
+            landIDsTo: string[],
+  }}) => {
+    socket.to(roomId).emit('place-trade', tradeData)
+  })
+
+  socket.on('accept-trade', ( { roomId, player, trader}: {roomId: string, player: number, trader: number}) => {
+    socket.to(roomId).emit('accept-trade', {player, trader})
+  })
+
+  socket.on('reject-trade', ( { roomId, player, trader}: {roomId: string, player: number, trader: number}) => {
+    socket.to(roomId).emit('reject-trade', {player, trader})
+  })
+
 
 
   // when winner ends game
   // when player played
-  socket.on('end-game', ({ roomId, game}: {roomId: string, game: GameState}) => {
-        socket.to(roomId).emit('update-state', { roomId, game})
+  socket.on('end-game', ({ roomId}: {roomId: string}) => {
+        const wasDeleted = roomStates.delete(roomId)
+
+        if (wasDeleted ) {
+          console.log(`deleted room ${roomId}`)
+        } else {
+          console.log(`could not delete room ${roomId}`)
+        }
+        socket.to(roomId).emit('end-game')
   })
+
 
   socket.on('clear', () => io.emit('clear'))
 })
