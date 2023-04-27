@@ -1,11 +1,11 @@
 {
   "name": "chaincity-server",
   "version": "1.0.0",
-  "description": "",
+  "description": "Server for the Chaincity Web3 Game",
   "main": "index.js",
   "scripts": {
     "server": "nodemon index.ts",
-    "start": "nodemon index.js"
+    "start": "nodemon index.ts"
   },
   "keywords": [],
   "author": "",
