@@ -94,13 +94,14 @@ const initialRoomState = {
     playing: false,
     players: [],
     roomId: '',
+    gameId: 0,
 }
 
 
 io.on('connection', (socket) => {
 
   // When a client joins a room, they send a "join-room" event with the room ID.
-  socket.on('create-room', ({roomId}: {roomId: string}) => {
+  socket.on('create-room', ({roomId, gameId}: {roomId: string, gameId}) => {
     // The client joins the specified room.
     socket.join(roomId);
 
@@ -110,6 +111,7 @@ io.on('connection', (socket) => {
       playing: false,
       players: [],
       roomId: roomId,
+      gameId: gameId
   }
 
     // Update the room state and broadcast the new state to all clients
@@ -137,13 +139,15 @@ io.on('connection', (socket) => {
       const randomRoom = validRooms[randomIndex];
       const roomId = randomRoom.roomId
 
+      const gameId = randomRoom.gameId
+
 
       // Log the random room
-      console.log('joined room  ', roomId);
+      console.log('joined room  ', {roomId, gameId});
 
       // The client joins the specified room 
       socket.join(roomId);
-      socket.emit('joined-room', roomId)
+      socket.emit('joined-room', {roomId, gameId})
 
     }
 
